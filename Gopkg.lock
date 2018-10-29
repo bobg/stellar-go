@@ -50,16 +50,6 @@
   revision = "1c8297c643b774435df8df65f7502b37d014fb6b"
 
 [[projects]]
-  digest = "1:99851d69cfb33fc9e027ae5190748dfca08457942386a3359abd42ef0d73d20f"
-  name = "github.com/agl/ed25519"
-  packages = [
-    ".",
-    "edwards25519",
-  ]
-  pruneopts = "T"
-  revision = "278e1ec8e8a6e017cd07577924d6766039146ced"
-
-[[projects]]
   branch = "master"
   digest = "1:0f58bf4103da77bfd026185b49755f4cd020fec4f12657ea4609d9de4593513c"
   name = "github.com/ajg/form"
@@ -745,15 +735,18 @@
   revision = "d1c525dea8ce39ea9a783d33cf08932305373f2c"
 
 [[projects]]
-  digest = "1:0f2b2cb9f84318c0f71fed3087ff9ac370370f842469b71b00348c3d72a19b44"
+  branch = "master"
+  digest = "1:3b0c96330a9f9226f2b2710fbefeb98f478616a8df384f38eb36043463c78275"
   name = "golang.org/x/crypto"
   packages = [
+    "ed25519",
+    "ed25519/internal/edwards25519",
     "pbkdf2",
     "ripemd160",
     "ssh/terminal",
   ]
   pruneopts = "T"
-  revision = "1f22c0103821b9390939b6776727195525381532"
+  revision = "7e6ffbd038512da5ae7ce06c196764f393990be1"
 
 [[projects]]
   digest = "1:a18644706c9badac05ff6618845384817a90a33b6cb79a7a0bdafaac6ef7e563"
@@ -776,7 +769,10 @@
 [[projects]]
   digest = "1:85c277bcba5f673644793cd86ccca4b366d938e4706c04be7222f6f643a683bb"
   name = "golang.org/x/sys"
-  packages = ["unix"]
+  packages = [
+    "unix",
+    "windows",
+  ]
   pruneopts = "T"
   revision = "1f5e250e1174502017917628cc48b52fdc25b531"
 
@@ -867,7 +863,6 @@
     "github.com/Masterminds/squirrel",
     "github.com/PuerkitoBio/throttled",
     "github.com/PuerkitoBio/throttled/store",
-    "github.com/agl/ed25519",
     "github.com/asaskevich/govalidator",
     "github.com/aws/aws-sdk-go/aws",
     "github.com/aws/aws-sdk-go/aws/session",
@@ -921,6 +916,7 @@
     "github.com/stretchr/testify/suite",
     "github.com/tyler-smith/go-bip32",
     "github.com/tyler-smith/go-bip39",
+    "golang.org/x/crypto/ed25519",
     "golang.org/x/net/http2",
     "gopkg.in/gavv/httpexpect.v1",
     "gopkg.in/tylerb/graceful.v1",
