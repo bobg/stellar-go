@@ -30,11 +30,7 @@ func (kp *Full) Verify(input []byte, sig []byte) error {
 	if len(sig) != 64 {
 		return ErrInvalidSignature
 	}
-
-	var asig [64]byte
-	copy(asig[:], sig[:])
-
-	if !ed25519.Verify(kp.publicKey(), input, asig[:]) {
+	if !ed25519.Verify(kp.publicKey(), input, sig) {
 		return ErrInvalidSignature
 	}
 	return nil
