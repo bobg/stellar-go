@@ -54,5 +54,9 @@
   name = "github.com/sirupsen/logrus"
   revision = "68cec9f21fbf3ea8d8f98c044bc6ce05f17b267a"
 
+[[override]]
+  name = "golang.org/x/sys"
+  revision = "c47cb47a3064eaebd36bc07aeb9a6e4b22681103"
+
 [prune]
   go-tests = true
