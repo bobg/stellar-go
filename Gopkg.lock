@@ -868,7 +868,6 @@
     "bitbucket.org/ww/goautoneg",
     "github.com/BurntSushi/toml",
     "github.com/Masterminds/squirrel",
-    "github.com/agl/ed25519",
     "github.com/asaskevich/govalidator",
     "github.com/aws/aws-sdk-go/aws",
     "github.com/aws/aws-sdk-go/aws/session",
