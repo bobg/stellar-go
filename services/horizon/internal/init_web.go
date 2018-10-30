@@ -3,27 +3,29 @@ package horizon
 import (
 	"compress/flate"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/PuerkitoBio/throttled"
-	"github.com/PuerkitoBio/throttled/store"
 	"github.com/go-chi/chi"
 	chimiddleware "github.com/go-chi/chi/middleware"
-	metrics "github.com/rcrowley/go-metrics"
+	"github.com/rcrowley/go-metrics"
 	"github.com/rs/cors"
 	"github.com/sebest/xff"
 	"github.com/stellar/go/services/horizon/internal/db2"
 	hProblem "github.com/stellar/go/services/horizon/internal/render/problem"
 	"github.com/stellar/go/services/horizon/internal/txsub/sequence"
 	"github.com/stellar/go/support/render/problem"
+	"github.com/throttled/throttled"
+	"github.com/throttled/throttled/store/memstore"
+	"github.com/throttled/throttled/store/redigostore"
 )
 
 // Web contains the http server related fields for horizon: the router,
 // rate limiter, etc.
 type Web struct {
 	router      *chi.Mux
-	rateLimiter *throttled.Throttler
+	rateLimiter *throttled.HTTPRateLimiter
 
 	requestTimer metrics.Timer
 	failureMeter metrics.Meter
@@ -143,10 +145,13 @@ func initWebActions(app *App) {
 	r.Post("/transactions", TransactionCreateAction{}.Handle)
 	r.Get("/paths", PathIndexAction{}.Handle)
 
-	if !app.config.DisableAssetStats {
+	if app.config.EnableAssetStats {
 		// Asset related endpoints
 		r.Get("/assets", AssetsAction{}.Handle)
 	}
+
+	// Network state related endpoints
+	r.Get("/operation_fee_stats", OperationFeeStatsAction{}.Handle)
 
 	// friendbot
 	if app.config.FriendbotURL != nil {
@@ -162,25 +167,53 @@ func initWebActions(app *App) {
 }
 
 func initWebRateLimiter(app *App) {
-	rateLimitStore := store.NewMemStore(1000)
-
-	if app.redis != nil {
-		rateLimitStore = store.NewRedisStore(app.redis, "throttle:", 0)
+	// Disabled
+	if app.config.RateLimit == nil {
+		return
 	}
 
-	rateLimiter := throttled.RateLimit(
-		app.config.RateLimit,
-		&throttled.VaryBy{Custom: remoteAddrIP},
-		rateLimitStore,
-	)
+	var rateLimitStore throttled.GCRAStore
+	rateLimitStore, err := memstore.New(1000)
 
-	rateLimiter.DeniedHandler = &RateLimitExceededAction{App: app, Action: Action{}}
-	app.web.rateLimiter = rateLimiter
+	if app.redis != nil {
+		key := "throttle:"
+		if app.config.RateLimitRedisKey != "" {
+			key = app.config.RateLimitRedisKey + ":"
+		}
+		rateLimitStore, err = redigostore.New(app.redis, key, 0)
+	}
+
+	if err != nil {
+		panic(fmt.Errorf("unable to initialize store for RateLimiter"))
+	}
+
+	rateLimiter, err := throttled.NewGCRARateLimiter(rateLimitStore, *app.config.RateLimit)
+	if err != nil {
+		panic(fmt.Errorf("unable to create RateLimiter"))
+	}
+
+	httpRateLimiter := throttled.HTTPRateLimiter{
+		RateLimiter:   rateLimiter,
+		DeniedHandler: &RateLimitExceededAction{App: app, Action: Action{}},
+	}
+	httpRateLimiter.VaryBy = VaryByRemoteIP{}
+	app.web.rateLimiter = &httpRateLimiter
+}
+
+type VaryByRemoteIP struct{}
+
+func (v VaryByRemoteIP) Key(r *http.Request) string {
+	return remoteAddrIP(r)
 }
 
 func remoteAddrIP(r *http.Request) string {
-	ip := strings.SplitN(r.RemoteAddr, ":", 2)[0]
-	return ip
+	// To support IPv6
+	lastSemicolon := strings.LastIndex(r.RemoteAddr, ":")
+	if lastSemicolon == -1 {
+		return r.RemoteAddr
+	} else {
+		return r.RemoteAddr[0:lastSemicolon]
+	}
 }
 
 func firstXForwardedFor(r *http.Request) string {

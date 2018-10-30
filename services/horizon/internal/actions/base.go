@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	horizonContext "github.com/stellar/go/services/horizon/internal/context"
 	"github.com/stellar/go/services/horizon/internal/render"
 	hProblem "github.com/stellar/go/services/horizon/internal/render/problem"
 	"github.com/stellar/go/services/horizon/internal/render/sse"
@@ -59,14 +60,31 @@ func (base *Base) Execute(action interface{}) {
 			goto NotAcceptable
 		}
 
-		stream := sse.NewStream(ctx, base.W, base.R)
+		stream := sse.NewStream(ctx, base.W)
 
 		for {
+			// Rate limit the request if it's a call to stream since it queries the DB every second. See
+			// https://github.com/stellar/go/issues/715 for more details.
+			app := base.R.Context().Value(&horizonContext.AppContextKey)
+			rateLimiter := app.(RateLimiterProvider).GetRateLimiter()
+			if rateLimiter != nil {
+				limited, _, err := rateLimiter.RateLimiter.RateLimit(rateLimiter.VaryBy.Key(base.R), 1)
+				if err != nil {
+					log.Ctx(ctx).Error(errors.Wrap(err, "RateLimiter error"))
+					stream.Err(errors.New("Unexpected stream error"))
+					return
+				}
+				if limited {
+					stream.Err(errors.New("rate limit exceeded"))
+					return
+				}
+			}
+
 			action.SSE(stream)
 
 			if base.Err != nil {
-				// in the case that we haven't yet sent an event, is also means we
-				// havent sent the preamble, meaning we should simply return the normal
+				// In the case that we haven't yet sent an event, is also means we
+				// haven't sent the preamble, meaning we should simply return the normal HTTP
 				// error.
 				if stream.SentCount() == 0 {
 					problem.Render(ctx, base.W, base.Err)
@@ -80,8 +98,14 @@ func (base *Base) Execute(action interface{}) {
 					base.Err = errors.New("Unexpected stream error")
 				}
 
+				// Send errors through the stream and then close the stream.
 				stream.Err(base.Err)
 			}
+
+			// Manually send the preamble in case there are no data events in SSE to trigger a stream.Send call.
+			// This method is called every iteration of the loop, but is protected by a sync.Once variable so it's
+			// only executed once.
+			stream.Init()
 
 			if stream.IsDone() {
 				return
@@ -89,6 +113,7 @@ func (base *Base) Execute(action interface{}) {
 
 			select {
 			case <-ctx.Done():
+				stream.Done() // Call Done on the stream so that it doesn't send any more heartbeats.
 				return
 			case <-sse.Pumped():
 				//no-op, continue onto the next iteration
