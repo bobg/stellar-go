@@ -56,7 +56,7 @@
 
 [[override]]
   name = "golang.org/x/sys"
-  revision = "8d1157a435470616f975ff9bb013bea8d0962067"
+  revision = "4ed4d404df456f81e878683a0363ed3013a59003"
 
 [prune]
   go-tests = true
