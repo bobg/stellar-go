@@ -54,10 +54,6 @@ func (ingest *Ingestion) Clear(start int64, end int64) error {
 	if err != nil {
 		return errors.Wrap(err, "Error clearing history_trades")
 	}
-	err = clear(start, end, "asset_stats", "id")
-	if err != nil {
-		return errors.Wrap(err, "Error clearing asset_stats")
-	}
 
 	return nil
 }
@@ -177,7 +173,8 @@ func (ingest *Ingestion) UpdateAccountIDs(tables []TableName) error {
 func (ingest *Ingestion) Ledger(
 	id int64,
 	header *core.LedgerHeader,
-	txs int,
+	successTxsCount int,
+	failedTxsCount int,
 	ops int,
 ) {
 	ingest.builders[LedgersTableName].Values(
@@ -194,7 +191,9 @@ func (ingest *Ingestion) Ledger(
 		time.Unix(header.CloseTime, 0).UTC(),
 		time.Now().UTC(),
 		time.Now().UTC(),
-		txs,
+		successTxsCount, // `transaction_count`
+		successTxsCount, // `successful_transaction_count`
+		failedTxsCount,
 		ops,
 		header.Data.LedgerVersion,
 		header.DataXDR(),
@@ -367,6 +366,8 @@ func (ingest *Ingestion) createInsertBuilders() {
 			"created_at",
 			"updated_at",
 			"transaction_count",
+			"successful_transaction_count",
+			"failed_transaction_count",
 			"operation_count",
 			"protocol_version",
 			"ledger_header",
@@ -450,17 +451,6 @@ func (ingest *Ingestion) createInsertBuilders() {
 			"counter_asset_id",
 			"counter_amount",
 			"base_is_seller",
-		},
-	}
-
-	ingest.builders[AssetStatsTableName] = &BatchInsertBuilder{
-		TableName: AssetStatsTableName,
-		Columns: []string{
-			"id",
-			"amount",
-			"num_accounts",
-			"flags",
-			"toml",
 		},
 	}
 }

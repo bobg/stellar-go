@@ -9,16 +9,15 @@ import (
 
 	"github.com/go-chi/chi"
 	chimiddleware "github.com/go-chi/chi/middleware"
-	"github.com/rcrowley/go-metrics"
+	metrics "github.com/rcrowley/go-metrics"
 	"github.com/rs/cors"
 	"github.com/sebest/xff"
 	"github.com/stellar/go/services/horizon/internal/db2"
 	hProblem "github.com/stellar/go/services/horizon/internal/render/problem"
+	"github.com/stellar/go/services/horizon/internal/render/sse"
 	"github.com/stellar/go/services/horizon/internal/txsub/sequence"
 	"github.com/stellar/go/support/render/problem"
 	"github.com/throttled/throttled"
-	"github.com/throttled/throttled/store/memstore"
-	"github.com/throttled/throttled/store/redigostore"
 )
 
 // Web contains the http server related fields for horizon: the router,
@@ -47,22 +46,24 @@ func initWeb(app *App) {
 	problem.RegisterError(db2.ErrInvalidCursor, problem.BadRequest)
 	problem.RegisterError(db2.ErrInvalidLimit, problem.BadRequest)
 	problem.RegisterError(db2.ErrInvalidOrder, problem.BadRequest)
+	problem.RegisterError(sse.ErrRateLimited, hProblem.RateLimitExceeded)
 }
 
 // initWebMiddleware installs the middleware stack used for horizon onto the
 // provided app.
+// Note that a request will go through the middlewares from top to bottom.
 func initWebMiddleware(app *App) {
-
 	r := app.web.router
+	r.Use(chimiddleware.Timeout(app.config.ConnectionTimeout))
 	r.Use(chimiddleware.StripSlashes)
-	r.Use(app.Middleware)
+	r.Use(app.middleware)
 	r.Use(requestCacheHeadersMiddleware)
 	r.Use(chimiddleware.RequestID)
-	r.Use(contextMiddleware(app.ctx))
+	r.Use(contextMiddleware)
 	r.Use(xff.Handler)
-	r.Use(LoggerMiddleware)
+	r.Use(loggerMiddleware)
 	r.Use(requestMetricsMiddleware)
-	r.Use(RecoverMiddleware)
+	r.Use(recoverMiddleware)
 	r.Use(chimiddleware.Compress(flate.DefaultCompression, "application/hal+json"))
 
 	c := cors.New(cors.Options{
@@ -77,7 +78,6 @@ func initWebMiddleware(app *App) {
 // initWebActions installs the routing configuration of horizon onto the
 // provided app.  All route registration should be implemented here.
 func initWebActions(app *App) {
-
 	r := app.web.router
 	r.Get("/", RootAction{}.Handle)
 	r.Get("/metrics", MetricsAction{}.Handle)
@@ -172,22 +172,7 @@ func initWebRateLimiter(app *App) {
 		return
 	}
 
-	var rateLimitStore throttled.GCRAStore
-	rateLimitStore, err := memstore.New(1000)
-
-	if app.redis != nil {
-		key := "throttle:"
-		if app.config.RateLimitRedisKey != "" {
-			key = app.config.RateLimitRedisKey + ":"
-		}
-		rateLimitStore, err = redigostore.New(app.redis, key, 0)
-	}
-
-	if err != nil {
-		panic(fmt.Errorf("unable to initialize store for RateLimiter"))
-	}
-
-	rateLimiter, err := throttled.NewGCRARateLimiter(rateLimitStore, *app.config.RateLimit)
+	rateLimiter, err := throttled.NewGCRARateLimiter(50000, *app.config.RateLimit)
 	if err != nil {
 		panic(fmt.Errorf("unable to create RateLimiter"))
 	}
@@ -224,27 +209,23 @@ func init() {
 	appInit.Add(
 		"web.init",
 		initWeb,
-
 		"app-context",
 	)
 
 	appInit.Add(
 		"web.rate-limiter",
 		initWebRateLimiter,
-
 		"web.init",
 	)
 	appInit.Add(
 		"web.middleware",
 		initWebMiddleware,
-
 		"web.init",
 		"web.rate-limiter",
 	)
 	appInit.Add(
 		"web.actions",
 		initWebActions,
-
 		"web.init",
 	)
 }

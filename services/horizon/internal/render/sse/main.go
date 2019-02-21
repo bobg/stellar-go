@@ -30,38 +30,11 @@ type Eventable interface {
 	SseEvent() Event
 }
 
-// Pumped returns a channel that will be closed the next time the input pump
-// sends.  It can be used similar to `ctx.Done()`, like so:  `<-sse.Pumped()`
-func Pumped() <-chan struct{} {
-	lock.Lock()
-	defer lock.Unlock()
-	return nextTick
-}
-
-// Tick triggers any open SSE streams to tick by replacing and closing the
-// `nextTick` trigger channel.
-func Tick() {
-	lock.Lock()
-	prev := nextTick
-	nextTick = make(chan struct{})
-	lock.Unlock()
-	close(prev)
-}
-
-// WriteHeartbeat sends a data-only message containing a heartbeat comment, which is ignored
-// by clients since it starts with a colon character. It serves as a keep-alive message.
-func WriteHeartbeat(w http.ResponseWriter) {
-	fmt.Fprint(w, ":heartbeat\n\n")
-	w.(http.Flusher).Flush()
-}
-
 // WritePreamble prepares this http connection for streaming using Server Sent
-// Events.  It sends the initial http response with the appropriate headers to
+// Events. It sends the initial http response with the appropriate headers to
 // do so.
 func WritePreamble(ctx context.Context, w http.ResponseWriter) bool {
-
 	_, flushable := w.(http.Flusher)
-
 	if !flushable {
 		//TODO: render a problem struct instead of simple string
 		http.Error(w, "Streaming Not Supported", http.StatusBadRequest)

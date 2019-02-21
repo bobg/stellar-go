@@ -1,21 +1,32 @@
+dist: xenial
 language: go
 services:
 - mysql
 - postgres
 - redis-server
 addons:
-  postgresql: '9.4'
+  postgresql: '10'
+  ssh_known_hosts:
+  - bitbucket.org
 go:
 - '1.9'
 - '1.10'
+- '1.11'
 - tip
 go_import_path: github.com/stellar/go
+before_install:
+- |
+  if [ "$TRAVIS_TAG" != "" ]; then
+    # Negate the result so process exits with 1 if anything found
+    echo "Searching for deprecated values in Horizon..."
+    ! egrep -irn -A 1 --include=*.go "Deprecated.+-.+remove.+in:.+$TRAVIS_TAG" ./services/horizon/ ./protocols/horizon/
+  fi
+- ./gofmt.sh
+- ./govet.sh
 install:
 - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
 script:
-- dep ensure -v
-- ./support/scripts/run_tests
-
+- dep ensure -v && ./support/scripts/run_tests
 before_deploy:
 - go run ./support/scripts/build_release_artifacts/main.go
 - ./support/scripts/push_snapshots_tag.sh
@@ -42,7 +53,7 @@ deploy:
     name: Snapshots $(date --utc +'%F-%T')
     on:
       branch: master
-      go: '1.9'
+      go: '1.11'
   #tagged releases
   - provider: releases
     skip_cleanup: true
@@ -55,4 +66,4 @@ deploy:
       repo: stellar/go
       tags: true
       condition: $TRAVIS_TAG != snapshots
-      go: '1.9'
+      go: '1.11'

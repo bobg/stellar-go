@@ -2,10 +2,14 @@ package horizon
 
 import (
 	"github.com/stellar/go/protocols/horizon"
+	"github.com/stellar/go/services/horizon/internal/actions"
 	"github.com/stellar/go/services/horizon/internal/paths"
 	"github.com/stellar/go/services/horizon/internal/resourceadapter"
 	"github.com/stellar/go/support/render/hal"
 )
+
+// Interface verification
+var _ actions.JSONer = (*PathIndexAction)(nil)
 
 // PathIndexAction provides path finding
 type PathIndexAction struct {
@@ -16,27 +20,26 @@ type PathIndexAction struct {
 }
 
 // JSON implements actions.JSON
-func (action *PathIndexAction) JSON() {
+func (action *PathIndexAction) JSON() error {
 	action.Do(
 		action.loadQuery,
 		action.loadSourceAssets,
 		action.loadRecords,
 		action.loadPage,
-		func() {
-			hal.Render(action.W, action.Page)
-		},
+		func() { hal.Render(action.W, action.Page) },
 	)
+	return action.Err
 }
 
 func (action *PathIndexAction) loadQuery() {
 	action.Query.DestinationAmount = action.GetPositiveAmount("destination_amount")
-	action.Query.DestinationAddress = action.GetAddress("destination_account")
+	action.Query.DestinationAddress = action.GetAddress("destination_account", actions.RequiredParam)
 	action.Query.DestinationAsset = action.GetAsset("destination_")
 }
 
 func (action *PathIndexAction) loadSourceAssets() {
 	app := AppFromContext(action.R.Context())
-	protocolVersion := app.protocolVersion
+	protocolVersion := app.coreSupportedProtocolVersion
 
 	action.Err = action.CoreQ().AssetsForAddress(
 		&action.Query.SourceAssets,

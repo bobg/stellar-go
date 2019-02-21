@@ -1,15 +1,19 @@
 package actions
 
 import (
-	"database/sql"
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"net/http"
+	"time"
 
 	horizonContext "github.com/stellar/go/services/horizon/internal/context"
+	"github.com/stellar/go/services/horizon/internal/ledger"
 	"github.com/stellar/go/services/horizon/internal/render"
 	hProblem "github.com/stellar/go/services/horizon/internal/render/problem"
 	"github.com/stellar/go/services/horizon/internal/render/sse"
 	"github.com/stellar/go/support/errors"
-	"github.com/stellar/go/support/log"
 	"github.com/stellar/go/support/render/problem"
 )
 
@@ -22,15 +26,19 @@ type Base struct {
 	R   *http.Request
 	Err error
 
-	isSetup bool
+	appCtx             context.Context
+	sseUpdateFrequency time.Duration
+	isSetup            bool
 }
 
 // Prepare established the common attributes that get used in nearly every
 // action.  "Child" actions may override this method to extend action, but it
 // is advised you also call this implementation to maintain behavior.
-func (base *Base) Prepare(w http.ResponseWriter, r *http.Request) {
+func (base *Base) Prepare(w http.ResponseWriter, r *http.Request, appCtx context.Context, sseUpdateFrequency time.Duration) {
 	base.W = w
 	base.R = r
+	base.sseUpdateFrequency = sseUpdateFrequency
+	base.appCtx = appCtx
 }
 
 // Execute trigger content negotiation and the actual execution of one of the
@@ -41,28 +49,30 @@ func (base *Base) Execute(action interface{}) {
 
 	switch contentType {
 	case render.MimeHal, render.MimeJSON:
-		action, ok := action.(JSON)
-
+		action, ok := action.(JSONer)
 		if !ok {
 			goto NotAcceptable
 		}
 
-		action.JSON()
-
-		if base.Err != nil {
-			problem.Render(ctx, base.W, base.Err)
+		err := action.JSON()
+		if err != nil {
+			problem.Render(ctx, base.W, err)
 			return
 		}
 
 	case render.MimeEventStream:
-		action, ok := action.(SSE)
-		if !ok {
+		switch action.(type) {
+		case EventStreamer, SingleObjectStreamer:
+		default:
 			goto NotAcceptable
 		}
 
 		stream := sse.NewStream(ctx, base.W)
 
+		var oldHash [32]byte
 		for {
+			lastLedgerState := ledger.CurrentState()
+
 			// Rate limit the request if it's a call to stream since it queries the DB every second. See
 			// https://github.com/stellar/go/issues/715 for more details.
 			app := base.R.Context().Value(&horizonContext.AppContextKey)
@@ -70,36 +80,43 @@ func (base *Base) Execute(action interface{}) {
 			if rateLimiter != nil {
 				limited, _, err := rateLimiter.RateLimiter.RateLimit(rateLimiter.VaryBy.Key(base.R), 1)
 				if err != nil {
-					log.Ctx(ctx).Error(errors.Wrap(err, "RateLimiter error"))
-					stream.Err(errors.New("Unexpected stream error"))
+					stream.Err(errors.Wrap(err, "RateLimiter error"))
 					return
 				}
 				if limited {
-					stream.Err(errors.New("rate limit exceeded"))
+					stream.Err(sse.ErrRateLimited)
 					return
 				}
 			}
 
-			action.SSE(stream)
-
-			if base.Err != nil {
-				// In the case that we haven't yet sent an event, is also means we
-				// haven't sent the preamble, meaning we should simply return the normal HTTP
-				// error.
-				if stream.SentCount() == 0 {
-					problem.Render(ctx, base.W, base.Err)
+			switch ac := action.(type) {
+			case EventStreamer:
+				err := ac.SSE(stream)
+				if err != nil {
+					stream.Err(err)
 					return
 				}
 
-				if errors.Cause(base.Err) == sql.ErrNoRows {
-					base.Err = errors.New("Object not found")
-				} else {
-					log.Ctx(ctx).Error(base.Err)
-					base.Err = errors.New("Unexpected stream error")
+			case SingleObjectStreamer:
+				newEvent, err := ac.LoadEvent()
+				if err != nil {
+					stream.Err(err)
+					return
+				}
+				resource, err := json.Marshal(newEvent.Data)
+				if err != nil {
+					stream.Err(errors.Wrap(err, "unable to marshal next action resource"))
+					return
 				}
 
-				// Send errors through the stream and then close the stream.
-				stream.Err(base.Err)
+				nextHash := sha256.Sum256(resource)
+				if bytes.Equal(nextHash[:], oldHash[:]) {
+					break
+				}
+
+				oldHash = nextHash
+				stream.SetLimit(10)
+				stream.Send(newEvent)
 			}
 
 			// Manually send the preamble in case there are no data events in SSE to trigger a stream.Send call.
@@ -111,25 +128,40 @@ func (base *Base) Execute(action interface{}) {
 				return
 			}
 
+			// Make sure this is buffered channel of size 1. Otherwise, the go routine below
+			// will never return if `newLedgers` channel is not read. From Effective Go:
+			// > If the channel is unbuffered, the sender blocks until the receiver has received the value.
+			newLedgers := make(chan bool, 1)
+			go func() {
+				for {
+					time.Sleep(base.sseUpdateFrequency)
+					currentLedgerState := ledger.CurrentState()
+					if currentLedgerState.HistoryLatest >= lastLedgerState.HistoryLatest+1 {
+						newLedgers <- true
+						return
+					}
+				}
+			}()
+
 			select {
+			case <-newLedgers:
+				continue
 			case <-ctx.Done():
-				stream.Done() // Call Done on the stream so that it doesn't send any more heartbeats.
-				return
-			case <-sse.Pumped():
-				//no-op, continue onto the next iteration
+			case <-base.appCtx.Done():
 			}
+
+			stream.Done()
+			return
 		}
 	case render.MimeRaw:
-		action, ok := action.(Raw)
-
+		action, ok := action.(RawDataResponder)
 		if !ok {
 			goto NotAcceptable
 		}
 
-		action.Raw()
-
-		if base.Err != nil {
-			problem.Render(ctx, base.W, base.Err)
+		err := action.Raw()
+		if err != nil {
+			problem.Render(ctx, base.W, err)
 			return
 		}
 	default:

@@ -12,7 +12,6 @@ import (
 	"github.com/stellar/go/amount"
 	"github.com/stellar/go/keypair"
 	"github.com/stellar/go/meta"
-	"github.com/stellar/go/services/horizon/internal/db2/core"
 	"github.com/stellar/go/services/horizon/internal/db2/history"
 	"github.com/stellar/go/services/horizon/internal/ingest/participants"
 	"github.com/stellar/go/support/errors"
@@ -67,8 +66,8 @@ func (is *Session) Run() {
 		}
 	}
 
-	if is.Config.EnableAssetStats {
-		is.Cursor.AssetsModified.UpdateAssetStats(is)
+	if is.Config.EnableAssetStats && is.Err == nil {
+		is.Err = is.AssetStats.UpdateAssetStats()
 	}
 
 	if is.Err != nil {
@@ -100,7 +99,7 @@ func (is *Session) clearLedger() {
 	}
 
 	startLedger, endLedger := is.Cursor.LedgerRange()
-	log.WithFields(ilog.F{"start": startLedger, "end": endLedger}).Info("Clearing ledgers")
+	log.WithFields(ilog.F{"toid_start": startLedger, "toid_end": endLedger}).Info("Clearing ledgers")
 
 	start := time.Now()
 	is.Err = is.Ingestion.Clear(is.Cursor.LedgerRange())
@@ -186,17 +185,18 @@ func (is *Session) ingestEffects() {
 
 	case xdr.OperationTypePathPayment:
 		op := opbody.MustPathPaymentOp()
-		result := is.Cursor.OperationResult().MustPathPaymentResult().MustSuccess()
+		resultSuccess := is.Cursor.OperationResult().MustPathPaymentResult().MustSuccess()
 
 		dets := map[string]interface{}{"amount": amount.String(op.DestAmount)}
 		is.assetDetails(dets, op.DestAsset, "")
 		effects.Add(op.Destination, history.EffectAccountCredited, dets)
 
-		dets = map[string]interface{}{"amount": amount.String(result.Last.Amount)}
+		result := is.Cursor.OperationResult().MustPathPaymentResult()
+		dets = map[string]interface{}{"amount": amount.String(result.SendAmount())}
 		is.assetDetails(dets, op.SendAsset, "")
 		effects.Add(source, history.EffectAccountDebited, dets)
 
-		is.ingestTradeEffects(effects, source, result.Offers)
+		is.ingestTradeEffects(effects, source, resultSuccess.Offers)
 	case xdr.OperationTypeManageOffer:
 		result := is.Cursor.OperationResult().MustManageOfferResult().MustSuccess()
 		is.ingestTradeEffects(effects, source, result.OffersClaimed)
@@ -392,6 +392,7 @@ func (is *Session) ingestLedger() {
 		is.Cursor.LedgerID(),
 		is.Cursor.Ledger(),
 		is.Cursor.SuccessfulTransactionCount(),
+		is.Cursor.FailedTransactionCount(),
 		is.Cursor.SuccessfulLedgerOperationCount(),
 	)
 
@@ -428,12 +429,12 @@ func (is *Session) ingestOperation() {
 	is.ingestOperationParticipants()
 	is.ingestEffects()
 	is.ingestTrades()
-	is.Err = is.Cursor.AssetsModified.IngestOperation(
-		is.Err,
-		is.Cursor.Operation(),
-		&is.Cursor.Transaction().Envelope.Tx.SourceAccount,
-		&core.Q{Session: is.Ingestion.DB},
-	)
+	if is.Config.EnableAssetStats && is.Err == nil {
+		is.Err = is.AssetStats.IngestOperation(
+			is.Cursor.Operation(),
+			&is.Cursor.Transaction().Envelope.Tx.SourceAccount,
+		)
+	}
 
 	if is.Err != nil {
 		is.Err = errors.Wrap(is.Err, "Cursor.AssetsModified.IngestOperation error")
@@ -599,6 +600,10 @@ func (is *Session) ingestTradeEffects(effects *EffectIngestion, buyer xdr.Accoun
 	}
 
 	for _, claim := range claims {
+		if claim.AmountSold == 0 && claim.AmountBought == 0 {
+			continue
+		}
+
 		seller := claim.SellerId
 		bd, sd := is.tradeDetails(buyer, seller, claim)
 		effects.Add(buyer, history.EffectTrade, bd)

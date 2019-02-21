@@ -8,6 +8,89 @@ bumps.  A breaking change will get clearly notified in this log.
 
 ## Unreleased
 
+### Breaking changes
+
+### Changes
+
+* Fixed a bug causing slice bounds out of range at offer-by-account endpoint during streaming.
+
+## v0.16.0 - 2019-02-04
+
+### Upgrade notes
+
+* Ledger > Admins need to reingest old ledgers because we introduced `successful_transaction_count` and `failed_transaction_count`.
+
+### Database migration notes
+
+Previous versions work fine with Horizon 0.16.0 schema so you can migrate (`horizon db migrate up`) database without stopping the Horizon process. To reingest ledgers run `horizon db reingest` using Horizon 0.16.0 binary.
+
+### Deprecations
+
+* Root > `protocol_version` will be deprecated in v0.17.0. It is relaced by `current_protocol_version` and `core_supported_protocol_version`.
+* Ledger > `transaction_count` will be deprecated in v0.17.0.
+* Signer > `public_key` will be deprecated in v0.17.0.
+
+### Changes
+
+* Improved `horizon db migrate` script. It will now either success or show a detailed message regarding why it failed.
+* Fixed effects ingestion of circular payments.
+* Improved account query performances for payments and operations.
+* Added `successful_transaction_count` and `failed_transaction_count` to `ledger` resource.
+* Fixed the wrong protocol version displayed in `root` resource by adding `current_protocol_version` and `core_supported_protocol_version`.
+* Improved streaming for single objects. It won't send an event back if the current event is the same as the last event sent.
+* Fixed ingesting effects of empty trades. Empty trades will be ignored during ingestion.
+
+## v0.15.4 - 2019-01-17
+
+* Fixed multiple issues in transaction submission subsystem.
+* Support for client fingerprint headers.
+* Fixed parameter checking in `horizon db backfill` command.
+
+## v0.15.3 - 2019-01-07
+
+* Fixed a bug in Horizon DB reaping code.
+* Fixed query checking code that generated `ERROR`-level log entries for invalid input.
+
+## v0.15.2 - 2018-12-13
+
+* Added `horizon db init-asset-stats` command to initialize `asset_stats` table. This command should be run once before starting ingestion if asset stats are enabled (`ENABLE_ASSET_STATS=true`).
+* Fixed `asset_stats` table to support longer `home_domain`s.
+* Fixed slow trades DB query.
+
+## v0.15.1 - 2018-11-09
+
+* Fixed memory leak in SSE stream code.
+
+## v0.15.0 - 2018-11-06
+
+DB migrations add a new fields and indexes on `history_trades` table. This is a very large table in `CATCHUP_COMPLETE` deployments so migration may take a long time (depending on your DB hardware). Please test the migrations execution time on the copy of your production DB first.
+
+This release contains several bug fixes and improvements:
+
+* New `/operation_fee_stats` endpoint includes fee stats for the last 5 ledgers.
+* ["Trades"](https://www.stellar.org/developers/horizon/reference/endpoints/trades.html) endpoint can now be streamed.
+* In ["Trade Aggregations"](https://www.stellar.org/developers/horizon/reference/endpoints/trade_aggregations.html) endpoint, `offset` parameter has been added.
+* Path finding bugs have been fixed and the algorithm has been improved. Check [#719](https://github.com/stellar/go/pull/719) for more information.
+* Connections (including streams) are closed after timeout defined using `--connection-timeout` CLI param or `CONNECTION_TIMEOUT` environment variable. If Horizon is behind a load balancer with idle timeout set, it is recommended to set this to a value equal a few seconds less than idle timeout so streams can be properly closed by Horizon.
+* Streams have been improved to check for updates every `--sse-update-frequency` CLI param or `SSE_UPDATE_FREQUENCY` environment variable seconds. If a new ledger has been closed in this period, new events will be sent to a stream. Previously streams checked for new events every 1 second, even when there were no new ledgers.
+* Rate limiting algorithm has been changed to [GCRA](https://brandur.org/rate-limiting#gcra).
+* Rate limiting in streams has been changed to be more fair. Now 1 *credit* has to be *paid* every time there's a new ledger instead of per request.
+* Rate limiting can be disabled completely by setting `--per-hour-rate-limit=0` CLI param or `PER_HOUR_RATE_LIMIT=0` environment variable.
+* Account flags now display `auth_immutable` value.
+* Logs can be sent to a file. Destination file can be set using an environment variable (`LOG_FILE={file}`) or CLI parameter (`--log-file={file}`).
+
+### Breaking changes
+
+* Assets stats are disabled by default. This can be changed using an environment variable (`ENABLE_ASSET_STATS=true`) or CLI parameter (`--enable-asset-stats=true`). Please note that it has a negative impact on a DB and ingestion time.
+* In ["Offers for Account"](https://www.stellar.org/developers/horizon/reference/endpoints/offers-for-account.html), `last_modified_time` field  endpoint can be `null` when ledger data is not available (has not been ingested yet).
+* ["Trades for Offer"](https://www.stellar.org/developers/horizon/reference/endpoints/trades-for-offer.html) endpoint will query for trades that match the given offer on either side of trades, rather than just the "sell" offer. Offer IDs are now [synthetic](https://www.stellar.org/developers/horizon/reference/resources/trade.html#synthetic-offer-ids). You have to reingest history to update offer IDs.
+
+### Other bug fixes
+
+* `horizon db backfill` command has been fixed.
+* Fixed `remoteAddrIP` function to support IPv6.
+* Fixed `route` field in the logs when the request is rate limited.
+
 ## v0.14.2 - 2018-09-27
 
 ### Bug fixes

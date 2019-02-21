@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/stellar/go/protocols/horizon"
+	"github.com/stellar/go/services/horizon/internal/actions"
 	"github.com/stellar/go/services/horizon/internal/db2"
 	"github.com/stellar/go/services/horizon/internal/db2/assets"
 	"github.com/stellar/go/services/horizon/internal/resourceadapter"
@@ -13,6 +14,9 @@ import (
 // This file contains the actions:
 //
 // AssetsAction: pages of assets
+
+// Interface verification
+var _ actions.JSONer = (*AssetsAction)(nil)
 
 // AssetsAction renders a page of Assets
 type AssetsAction struct {
@@ -27,15 +31,14 @@ type AssetsAction struct {
 const maxAssetCodeLength = 12
 
 // JSON is a method for actions.JSON
-func (action *AssetsAction) JSON() {
+func (action *AssetsAction) JSON() error {
 	action.Do(
 		action.loadParams,
 		action.loadRecords,
 		action.loadPage,
-		func() {
-			hal.Render(action.W, action.Page)
-		},
+		func() { hal.Render(action.W, action.Page) },
 	)
+	return action.Err
 }
 
 func (action *AssetsAction) loadParams() {
@@ -52,7 +55,7 @@ func (action *AssetsAction) loadParams() {
 		}
 		action.AssetIssuer = issuerAccount.Address()
 	}
-	action.PagingParams = action.GetPageQuery()
+	action.PagingParams = action.GetPageQuery(actions.DisableCursorValidation)
 }
 
 func (action *AssetsAction) loadRecords() {
