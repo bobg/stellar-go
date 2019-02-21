@@ -60,8 +60,8 @@
   revision = "c99eef3ad70a3be5a983770523e0e379699c805c"
 
 [[override]]
+  branch = "master"
   name = "golang.org/x/sys"
-  revision = "4ed4d404df456f81e878683a0363ed3013a59003"
 
 [prune]
   go-tests = true
