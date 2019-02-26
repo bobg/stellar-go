@@ -578,14 +578,14 @@
   revision = "83532ca1c1caa393179c677b6facf48e61f4ca5d"
 
 [[projects]]
-  digest = "1:f4144e2638d1a213dc42fc7a7242d48285cbce7ada079f475c96920731b999b0"
+  digest = "1:39553373857c2f3d484b9e1e4474bf6f21a795fe14fe6b941362ee6b266416f3"
   name = "github.com/sirupsen/logrus"
   packages = [
     ".",
     "hooks/test",
   ]
   pruneopts = "T"
-  revision = "68cec9f21fbf3ea8d8f98c044bc6ce05f17b267a"
+  revision = "070c81def33f6362a8267b6a4e56fb7bf23fc6b5"
 
 [[projects]]
   digest = "1:e4ea18b52dd9211e7e7b551ecaef4c49c274b2d9d5df4a46f70a03281a8b3c45"
@@ -738,8 +738,7 @@
   revision = "d1c525dea8ce39ea9a783d33cf08932305373f2c"
 
 [[projects]]
-  branch = "master"
-  digest = "1:3b0c96330a9f9226f2b2710fbefeb98f478616a8df384f38eb36043463c78275"
+  digest = "1:214dc62bc053a6f4f7e4cb6c6393920fcc213c80994a7725fcb35974992d7ccd"
   name = "golang.org/x/crypto"
   packages = [
     "ed25519",
@@ -749,7 +748,7 @@
     "ssh/terminal",
   ]
   pruneopts = "T"
-  revision = "7e6ffbd038512da5ae7ce06c196764f393990be1"
+  revision = "7f87c0fbb88b590338857bcb720678c2583d4dea"
 
 [[projects]]
   digest = "1:a18644706c9badac05ff6618845384817a90a33b6cb79a7a0bdafaac6ef7e563"
@@ -770,15 +769,14 @@
   revision = "9bc2a3340c92c17a20edcd0080e93851ed58f5d5"
 
 [[projects]]
-  branch = "master"
-  digest = "1:cda2920464b32bc5fd26672f3ccfe2bdda62abe09d9eef0d62f7c6f1f32bbfa4"
+  digest = "1:0e2d0a79d5d135022a0733fa902d8c338871a5112035acd34774f62412b92573"
   name = "golang.org/x/sys"
   packages = [
     "unix",
     "windows",
   ]
   pruneopts = "T"
-  revision = "b4e8571b14e03cc164df06f72b640ebce3899579"
+  revision = "cc5685c2db1239775905f3911f0067c0fa74762f"
 
 [[projects]]
   digest = "1:e75680071853b8e66b993f3b108eac3aa925432a4d2fb0205f6cb6422def925e"
